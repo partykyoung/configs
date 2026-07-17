@@ -27,6 +27,9 @@ export default defineConfig([
       },
     },
     rules: {
+      /* 컴포넌트는 function 선언이므로 func-style 경고 해제 (.tsx에서 충돌 방지) */
+      "func-style": "off",
+
       // 컴포넌트 이름은 PascalCase
       "react/jsx-pascal-case": [
         "error",

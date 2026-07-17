@@ -13,7 +13,7 @@ export default defineConfig([
     ignores: ["**/*.config.{js,mjs,cjs,ts,mts,cts}", "**/.*rc.{js,mjs,cjs}"],
   },
   {
-    files: ["**/*.{js,mjs,cjs,ts,mts,cts}"],
+    files: ["**/*.{js,mjs,cjs,jsx,ts,mts,cts,tsx}"],
     plugins: { js, import: importPlugin, "check-file": checkFilePlugin },
     extends: ["js/recommended"],
     languageOptions: { globals: globals.browser },
@@ -28,7 +28,6 @@ export default defineConfig([
       "@typescript-eslint/no-explicit-any": "error",
 
       /* @ts-expect-error 사용, @ts-ignore 금지 */
-      "@typescript-eslint/prefer-ts-expect-error": "error",
       "@typescript-eslint/ban-ts-comment": [
         "error",
         {
@@ -58,8 +57,17 @@ export default defineConfig([
       /* 변수는 타입 추론 선호 */
       "@typescript-eslint/no-inferrable-types": "warn",
 
-      /* type / interface 기준  - 기본은 type 사용 */
-      "@typescript-eslint/consistent-type-definitions": ["error", "type"],
+      /* 객체 형태는 interface 기본. type은 유니온/유틸리티/튜플/함수 시그니처에만 */
+      "@typescript-eslint/consistent-type-definitions": ["error", "interface"],
+
+      /* as 단언 최소화 — 객체 리터럴은 satisfies 사용 */
+      "@typescript-eslint/consistent-type-assertions": [
+        "error",
+        {
+          assertionStyle: "as",
+          objectLiteralTypeAssertions: "never",
+        },
+      ],
 
       /* Error 객체만 throw 허용 */
       "no-throw-literal": "error",
@@ -82,23 +90,28 @@ export default defineConfig([
       /* 네이밍 컨벤션 (Variable, Function, Class, Constant) */
       "@typescript-eslint/naming-convention": [
         "error",
+        // 변수: camelCase
         {
-          // 변수 및 함수: camelCase
-          selector: ["variable", "function"],
+          selector: "variable",
           format: ["camelCase"],
+        },
+        // const 변수: camelCase, UPPER_CASE, PascalCase (React.memo 등 컴포넌트 할당 허용)
+        {
+          selector: "variable",
+          modifiers: ["const"],
+          format: ["camelCase", "UPPER_CASE", "PascalCase"],
+        },
+        // 함수: camelCase + PascalCase (React 컴포넌트는 PascalCase function 선언)
+        {
+          selector: "function",
+          format: ["camelCase", "PascalCase"],
         },
         // 클래스: PascalCase
         {
           selector: "class",
           format: ["PascalCase"],
         },
-        // 상수: UPPER_SNAKE_CASE
-        {
-          selector: "variable",
-          modifiers: ["const"],
-          format: ["UPPER_CASE", "camelCase"],
-        },
-        // 타입/인터페이스: PascalCase, I 접두사 및 Type 접두사/접미사 금지
+        // 타입/인터페이스: PascalCase, I 접두사 및 Type 접미사 금지
         {
           selector: ["typeAlias", "interface"],
           format: ["PascalCase"],
@@ -159,27 +172,6 @@ export default defineConfig([
             order: "asc",
             caseInsensitive: true,
           },
-        },
-      ],
-    },
-  },
-  {
-    files: [
-      "app/**/*.{js,jsx,ts,tsx}",
-      "src/app/**/*.{js,jsx,ts,tsx}",
-      "apps/**/app/**/*.{js,jsx,ts,tsx}",
-    ],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          paths: [
-            {
-              name: "next/head",
-              message:
-                "Head 관리는 Next.js metadata API를 사용하세요. (next/head 사용 금지)",
-            },
-          ],
         },
       ],
     },
