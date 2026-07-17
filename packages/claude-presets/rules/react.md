@@ -1,7 +1,5 @@
 # React 스타일 가이드라인
 
-원문: https://itall.atlassian.net/wiki/spaces/TMWEB/pages/189005832/
-
 > **우선순위**: 본 문서는 프로젝트의 1차 기준입니다. 외부 스킬·가이드(`.claude/skills/` 하위 문서 포함)는 보완 참고용이며, 본 문서와 어긋날 경우 항상 본 문서를 우선합니다.
 
 ## 컴포넌트 정의
