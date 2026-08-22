@@ -30,7 +30,8 @@ function findProjectRoot() {
 const projectRoot = findProjectRoot();
 
 // ── 실행 모드 ──────────────────────────────────────────────────────────
-//   (기본)         덮어쓰기. 단 "바뀐 파일만" 쓰고 신규/변경 목록을 요약 출력.
+//   (기본)          TTY에서는 에이전트를 선택하고, 비대화형에서는 모두 동기화.
+//   --agent <names> claude,codex 형식으로 동기화 대상을 지정.
 //   --dry|--preview  쓰지 않고 바뀔 부분을 unified diff 로 미리보기만.
 //   --interactive|-i 변경 파일마다 diff 를 보여주고 적용/건너뜀/전체/중단 선택.
 //                    TTY 가 아니면 경고 후 기본 동작으로 fallback.
@@ -43,6 +44,73 @@ if (INTERACTIVE && !process.stdin.isTTY) {
   );
   INTERACTIVE = false;
 }
+
+function getAgentArg() {
+  const inlineArg = argv.find((arg) => arg.startsWith("--agent="));
+  if (inlineArg) return inlineArg.slice("--agent=".length).toLowerCase();
+
+  const argIndex = argv.indexOf("--agent");
+  if (argIndex === -1) return null;
+  return argv[argIndex + 1]?.toLowerCase() ?? "";
+}
+
+function parseAgentSelection(value) {
+  const aliases = {
+    1: "claude",
+    2: "codex",
+    claude: "claude",
+    codex: "codex",
+  };
+  const values = value
+    .split(/[\s,]+/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  if (values.includes("all")) return new Set(["claude", "codex"]);
+
+  const invalidValues = values.filter((item) => aliases[item] == null);
+  if (!values.length || invalidValues.length) return null;
+  return new Set(values.map((item) => aliases[item]));
+}
+
+function invalidSelection(value, source) {
+  console.error(
+    `✗ 잘못된 ${source}입니다: ${value || "(없음)"}. claude와 codex를 쉼표로 구분해 선택하세요.`,
+  );
+  process.exit(1);
+}
+
+async function selectAgents() {
+  const agentArg = getAgentArg();
+  if (agentArg != null) {
+    const selection = parseAgentSelection(agentArg);
+    if (selection) return selection;
+    invalidSelection(agentArg, "--agent 값");
+  }
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return new Set(["claude", "codex"]);
+  }
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  console.log("\n동기화할 에이전트를 선택하세요 (복수 선택 가능):");
+  console.log("  [x] 1) Claude");
+  console.log("  [x] 2) Codex");
+  const answer = (await rl.question("선택 [1,2]: ")).trim().toLowerCase();
+  rl.close();
+
+  const selection = parseAgentSelection(answer || "1,2");
+  if (selection) return selection;
+  invalidSelection(answer, "선택");
+}
+
+const selectedAgents = await selectAgents();
+const syncClaude = selectedAgents.has("claude");
+const syncCodex = selectedAgents.has("codex");
+const selectedAgentLabel = [
+  ...(syncClaude ? ["Claude"] : []),
+  ...(syncCodex ? ["Codex"] : []),
+].join(" + ");
+console.log(`ℹ 동기화 대상: ${selectedAgentLabel}`);
 
 // 소비처 package.json 의 모든 의존성을 하나로 합쳐 반환.
 function getConsumerDeps() {
@@ -211,22 +279,33 @@ const commandsSource = join(here, "..", "commands");
 const skillsSource = join(here, "..", "skills");
 
 const plans = [
-  {
-    label: "rules → .claude/rules",
-    ops: planArea(rulesSource, join(projectRoot, ".claude", "rules")),
-  },
-  {
-    label: "commands → .claude/commands",
-    ops: planArea(commandsSource, join(projectRoot, ".claude", "commands")),
-  },
-  {
-    label: "rules → .codex/rules",
-    ops: planArea(rulesSource, join(projectRoot, ".codex", "rules")),
-  },
-  {
-    label: "skills → .agents/skills",
-    ops: planArea(skillsSource, join(projectRoot, ".agents", "skills")),
-  },
+  ...(syncClaude
+    ? [
+        {
+          label: "rules → .claude/rules",
+          ops: planArea(rulesSource, join(projectRoot, ".claude", "rules")),
+        },
+        {
+          label: "commands → .claude/commands",
+          ops: planArea(
+            commandsSource,
+            join(projectRoot, ".claude", "commands"),
+          ),
+        },
+      ]
+    : []),
+  ...(syncCodex
+    ? [
+        {
+          label: "rules → .codex/rules",
+          ops: planArea(rulesSource, join(projectRoot, ".codex", "rules")),
+        },
+        {
+          label: "skills → .agents/skills",
+          ops: planArea(skillsSource, join(projectRoot, ".agents", "skills")),
+        },
+      ]
+    : []),
 ];
 
 const summary = await runSync(plans);
@@ -295,19 +374,23 @@ function syncAgentDoc({ path, title, managedBlock, legacyManualMarker }) {
   }
 }
 
-syncAgentDoc({
-  path: join(projectRoot, "CLAUDE.md"),
-  title: "CLAUDE.md",
-  managedBlock: claudeManagedBlock,
-  legacyManualMarker: "claude-presets:manual",
-});
+if (syncClaude) {
+  syncAgentDoc({
+    path: join(projectRoot, "CLAUDE.md"),
+    title: "CLAUDE.md",
+    managedBlock: claudeManagedBlock,
+    legacyManualMarker: "claude-presets:manual",
+  });
+}
 
-syncAgentDoc({
-  path: join(projectRoot, "AGENTS.md"),
-  title: "AGENTS.md",
-  managedBlock: codexManagedBlock,
-  legacyManualMarker: "codex-presets:manual",
-});
+if (syncCodex) {
+  syncAgentDoc({
+    path: join(projectRoot, "AGENTS.md"),
+    title: "AGENTS.md",
+    managedBlock: codexManagedBlock,
+    legacyManualMarker: "codex-presets:manual",
+  });
+}
 
 // ── 최종 요약 ────────────────────────────────────────────────────────────
 if (!DRY) {
