@@ -18,13 +18,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 // ── 프로젝트 루트 결정 ─────────────────────────────────────────────────
 //   pnpm 워크스페이스에서 실행하면 projectRoot가 패키지 디렉토리가 될 수 있다.
 //   git rev-parse --show-toplevel 로 실제 프로젝트 루트를 찾고,
-//   실패하면 projectRoot fallback.
+//   실패하면 현재 작업 디렉토리를 사용한다.
 function findProjectRoot() {
   const result = spawnSync("git", ["rev-parse", "--show-toplevel"], {
     encoding: "utf8",
   });
   if (result.status === 0) return result.stdout.trim();
-  return projectRoot;
+  return process.cwd();
 }
 
 const projectRoot = findProjectRoot();
@@ -66,12 +66,12 @@ const depNames = Object.keys(consumerDeps);
 
 const includeReact = depNames.includes("react");
 if (includeReact) {
-  console.log("ℹ react 의존성 감지 — react 규칙을 CLAUDE.md 에 포함합니다.");
+  console.log("ℹ react 의존성 감지 — react 규칙을 에이전트 지침에 포함합니다.");
 }
 
 const includeNextjs = depNames.includes("next");
 if (includeNextjs) {
-  console.log("ℹ next 의존성 감지 — next 규칙을 CLAUDE.md 에 포함합니다.");
+  console.log("ℹ next 의존성 감지 — next 규칙을 에이전트 지침에 포함합니다.");
 }
 
 // ── 파일 단위 동기화 엔진 ────────────────────────────────────────────────
@@ -208,6 +208,7 @@ if (!existsSync(rulesSource)) {
 }
 
 const commandsSource = join(here, "..", "commands");
+const skillsSource = join(here, "..", "skills");
 
 const plans = [
   {
@@ -218,69 +219,95 @@ const plans = [
     label: "commands → .claude/commands",
     ops: planArea(commandsSource, join(projectRoot, ".claude", "commands")),
   },
+  {
+    label: "rules → .codex/rules",
+    ops: planArea(rulesSource, join(projectRoot, ".codex", "rules")),
+  },
+  {
+    label: "skills → .agents/skills",
+    ops: planArea(skillsSource, join(projectRoot, ".agents", "skills")),
+  },
 ];
 
 const summary = await runSync(plans);
 
-// ── CLAUDE.md 관리 블록 주입 ─────────────────────────────────────────────
-const claudeMdPath = join(projectRoot, "CLAUDE.md");
-const ruleImports = [
+// ── 에이전트 지침 관리 블록 주입 ──────────────────────────────────────────
+const enabledRules = [
   ...(includeReact ? ["react"] : []),
   "typescript",
   ...(includeNextjs ? ["next"] : []),
-]
-  .map((name) => `@.claude/rules/${name}.md`)
-  .join("\n");
+];
 
-const managedBlock = [
+const claudeManagedBlock = [
   "<!-- agent-presets:start (자동 생성 — 이 블록은 직접 편집하지 마세요. `sync-agent-presets` 가 갱신합니다) -->",
   "## 공용 Claude 규칙 (@kyoungah/agent-presets)",
   "",
   "`.claude/rules/` 규칙을 1차 기준으로 적용합니다. 갱신은 `sync-agent-presets` 재실행.",
   "",
-  ruleImports,
+  enabledRules.map((name) => `@.claude/rules/${name}.md`).join("\n"),
+  "<!-- agent-presets:end -->",
+].join("\n");
+
+const codexManagedBlock = [
+  "<!-- agent-presets:start (자동 생성 — 이 블록은 직접 편집하지 마세요. `sync-agent-presets` 가 갱신합니다) -->",
+  "## 공용 Codex 규칙 (@kyoungah/agent-presets)",
+  "",
+  "코드 작업 전에 해당하는 `.codex/rules/` 문서를 읽고 1차 기준으로 적용합니다. 갱신은 `sync-agent-presets` 재실행.",
+  "",
+  ...enabledRules.map((name) => `- \`.codex/rules/${name}.md\``),
   "<!-- agent-presets:end -->",
 ].join("\n");
 
 const blockRegex =
-  /<!-- (?:agent|claude)-presets:start[\s\S]*?(?:agent|claude)-presets:end -->/;
+  /<!-- (?:agent|claude|codex)-presets:start[\s\S]*?(?:agent|claude|codex)-presets:end -->/i;
 
-function nextClaudeMd(current) {
-  if (current == null) return `# CLAUDE.md\n\n${managedBlock}\n`;
+function nextAgentDoc(current, title, managedBlock) {
+  blockRegex.lastIndex = 0;
+  if (current == null) return `# ${title}\n\n${managedBlock}\n`;
+  blockRegex.lastIndex = 0;
   if (blockRegex.test(current))
     return current.replace(blockRegex, managedBlock);
   const sep = current.endsWith("\n") ? "\n" : "\n\n";
   return `${current}${sep}${managedBlock}\n`;
 }
 
-const currentClaudeMd = existsSync(claudeMdPath)
-  ? readFileSync(claudeMdPath, "utf8")
-  : null;
+function syncAgentDoc({ path, title, managedBlock, legacyManualMarker }) {
+  const current = existsSync(path) ? readFileSync(path, "utf8") : null;
+  if (
+    current?.includes("agent-presets:manual") ||
+    (legacyManualMarker && current?.includes(legacyManualMarker))
+  ) {
+    console.log(`ℹ ${path} 에 manual 마커가 있어 주입을 건너뜁니다.`);
+    return;
+  }
 
-if (
-  currentClaudeMd?.includes("agent-presets:manual") ||
-  currentClaudeMd?.includes("claude-presets:manual")
-) {
-  console.log(
-    `ℹ ${claudeMdPath} 에 manual 마커가 있어 CLAUDE.md 주입을 건너뜁니다.`,
-  );
-} else {
-  const next = nextClaudeMd(currentClaudeMd);
-  if (next === currentClaudeMd) {
-    // 변화 없음
-  } else if (DRY) {
+  const next = nextAgentDoc(current, title, managedBlock);
+  if (next === current) return;
+  if (DRY) {
     console.log(
-      `\nℹ (--dry) CLAUDE.md 관리 블록이 ${
-        currentClaudeMd == null ? "생성" : "갱신"
-      }됩니다. 쓰지 않음.`,
+      `\nℹ (--dry) ${title} 관리 블록이 ${current == null ? "생성" : "갱신"}됩니다. 쓰지 않음.`,
     );
   } else {
-    writeFileSync(claudeMdPath, next);
+    writeFileSync(path, next);
     console.log(
-      `✓ CLAUDE.md 관리 블록 ${currentClaudeMd == null ? "생성" : "갱신"} (${claudeMdPath})`,
+      `✓ ${title} 관리 블록 ${current == null ? "생성" : "갱신"} (${path})`,
     );
   }
 }
+
+syncAgentDoc({
+  path: join(projectRoot, "CLAUDE.md"),
+  title: "CLAUDE.md",
+  managedBlock: claudeManagedBlock,
+  legacyManualMarker: "claude-presets:manual",
+});
+
+syncAgentDoc({
+  path: join(projectRoot, "AGENTS.md"),
+  title: "AGENTS.md",
+  managedBlock: codexManagedBlock,
+  legacyManualMarker: "codex-presets:manual",
+});
 
 // ── 최종 요약 ────────────────────────────────────────────────────────────
 if (!DRY) {

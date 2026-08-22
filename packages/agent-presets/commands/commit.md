@@ -55,7 +55,7 @@ feat: 커밋메시지
 
 - subject는 50자 내외, **명사형 종결**(~추가, ~수정, ~개선), 마침표 금지
 - 변경 파일이 3개 이상이거나 의도 설명이 필요한 변경이면 body에 "무엇을/왜"를 bullet 2~4개로 작성
-- `🤖 Generated with Claude Code`, `Co-Authored-By` 등 **AI 서명·footer 추가 금지**
+- `Generated with ...`, `Co-Authored-By` 등 **AI 서명·footer 추가 금지**
 
 ### 4. 커밋 실행
 
