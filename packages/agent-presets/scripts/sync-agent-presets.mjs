@@ -233,16 +233,17 @@ const ruleImports = [
   .join("\n");
 
 const managedBlock = [
-  "<!-- claude-presets:start (자동 생성 — 이 블록은 직접 편집하지 마세요. `sync-claude-presets` 가 갱신합니다) -->",
-  "## 공용 Claude 규칙 (@kyoungah/claude-presets)",
+  "<!-- agent-presets:start (자동 생성 — 이 블록은 직접 편집하지 마세요. `sync-agent-presets` 가 갱신합니다) -->",
+  "## 공용 Claude 규칙 (@kyoungah/agent-presets)",
   "",
-  "`.claude/rules/` 규칙을 1차 기준으로 적용합니다. 갱신은 `sync-claude-presets` 재실행.",
+  "`.claude/rules/` 규칙을 1차 기준으로 적용합니다. 갱신은 `sync-agent-presets` 재실행.",
   "",
   ruleImports,
-  "<!-- claude-presets:end -->",
+  "<!-- agent-presets:end -->",
 ].join("\n");
 
-const blockRegex = /<!-- claude-presets:start[\s\S]*?claude-presets:end -->/;
+const blockRegex =
+  /<!-- (?:agent|claude)-presets:start[\s\S]*?(?:agent|claude)-presets:end -->/;
 
 function nextClaudeMd(current) {
   if (current == null) return `# CLAUDE.md\n\n${managedBlock}\n`;
@@ -256,7 +257,10 @@ const currentClaudeMd = existsSync(claudeMdPath)
   ? readFileSync(claudeMdPath, "utf8")
   : null;
 
-if (currentClaudeMd?.includes("claude-presets:manual")) {
+if (
+  currentClaudeMd?.includes("agent-presets:manual") ||
+  currentClaudeMd?.includes("claude-presets:manual")
+) {
   console.log(
     `ℹ ${claudeMdPath} 에 manual 마커가 있어 CLAUDE.md 주입을 건너뜁니다.`,
   );

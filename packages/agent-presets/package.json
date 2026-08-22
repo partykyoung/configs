@@ -1,5 +1,5 @@
 {
-  "name": "@kyoungah/claude-presets",
+  "name": "@kyoungah/agent-presets",
   "version": "0.0.1",
   "description": "공용 Claude Code 규칙 및 컨벤션 프리셋 (Next.js / React / TypeScript)",
   "repository": {
@@ -7,10 +7,10 @@
     "url": "https://github.com/partykyoung/kyoungah-configs"
   },
   "bin": {
-    "sync-claude-presets": "scripts/sync-claude-presets.mjs"
+    "sync-agent-presets": "scripts/sync-agent-presets.mjs"
   },
   "scripts": {
-    "sync": "node scripts/sync-claude-presets.mjs"
+    "sync": "node scripts/sync-agent-presets.mjs"
   },
   "files": [
     "rules",
