@@ -1,6 +1,6 @@
-# ESLint 규칙 ↔ Claude Presets 매핑
+# ESLint 규칙 ↔ Agent Presets 매핑
 
-이 문서는 `@kyoungah/eslint-config`의 ESLint 규칙이 `@kyoungah/claude-presets`의 어떤 가이드라인에서 비롯되었는지 설명합니다.
+이 문서는 `@kyoungah/eslint-config`의 ESLint 규칙이 `@kyoungah/agent-presets`의 어떤 가이드라인에서 비롯되었는지 설명합니다.
 
 ---
 

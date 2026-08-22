@@ -1,0 +1,22 @@
+{
+  "name": "@kyoungah/agent-presets",
+  "version": "0.0.1",
+  "description": "Claude Code와 Codex용 공용 규칙 및 워크플로 프리셋 (Next.js / React / TypeScript)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/partykyoung/kyoungah-configs"
+  },
+  "bin": {
+    "sync-agent-presets": "scripts/sync-agent-presets.mjs"
+  },
+  "scripts": {
+    "sync": "node scripts/sync-agent-presets.mjs"
+  },
+  "files": [
+    "rules",
+    "commands",
+    "skills",
+    "scripts",
+    "README.md"
+  ]
+}
