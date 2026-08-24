@@ -142,6 +142,22 @@ if (includeNextjs) {
   console.log("ℹ next 의존성 감지 — next 규칙을 에이전트 지침에 포함합니다.");
 }
 
+// ── 조건부 규칙 ────────────────────────────────────────────────────────
+//   Claude Code 는 `.claude/rules/*.md` 를 CLAUDE.md 와 함께 자동 로드한다.
+//   무관한 규칙 파일이 남아 있으면 그대로 컨텍스트에 실리므로,
+//   해당 의존성이 없으면 파일 자체를 복사하지 않는다.
+const conditionalRuleFiles = {
+  "react.md": includeReact,
+  "next.md": includeNextjs,
+};
+const isEnabledRuleFile = (rel) => conditionalRuleFiles[rel] ?? true;
+
+const enabledRules = [
+  ...(includeReact ? ["react"] : []),
+  "typescript",
+  ...(includeNextjs ? ["next"] : []),
+];
+
 // ── 파일 단위 동기화 엔진 ────────────────────────────────────────────────
 const relLabel = (p) => relative(projectRoot, p) || ".";
 
@@ -170,9 +186,10 @@ function classify(srcFile, tgtFile) {
   }
 }
 
-function planArea(srcRoot, tgtRoot) {
+function planArea(srcRoot, tgtRoot, fileFilter) {
   if (!existsSync(srcRoot)) return [];
-  return walk(srcRoot).map((rel) => {
+  const files = fileFilter ? walk(srcRoot).filter(fileFilter) : walk(srcRoot);
+  return files.map((rel) => {
     const s = join(srcRoot, rel);
     const t = join(tgtRoot, rel);
     return { rel, s, t, status: classify(s, t) };
@@ -283,7 +300,11 @@ const plans = [
     ? [
         {
           label: "rules → .claude/rules",
-          ops: planArea(rulesSource, join(projectRoot, ".claude", "rules")),
+          ops: planArea(
+            rulesSource,
+            join(projectRoot, ".claude", "rules"),
+            isEnabledRuleFile,
+          ),
         },
         {
           label: "commands → .claude/commands",
@@ -298,7 +319,11 @@ const plans = [
     ? [
         {
           label: "rules → .codex/rules",
-          ops: planArea(rulesSource, join(projectRoot, ".codex", "rules")),
+          ops: planArea(
+            rulesSource,
+            join(projectRoot, ".codex", "rules"),
+            isEnabledRuleFile,
+          ),
         },
         {
           label: "skills → .agents/skills",
@@ -311,19 +336,38 @@ const plans = [
 const summary = await runSync(plans);
 
 // ── 에이전트 지침 관리 블록 주입 ──────────────────────────────────────────
-const enabledRules = [
-  ...(includeReact ? ["react"] : []),
-  "typescript",
-  ...(includeNextjs ? ["next"] : []),
-];
+// 규칙 파일의 `paths:` 프론트매터(인라인 배열 형식)를 읽어 적용 범위를 문서화한다.
+//   프론트매터가 없으면 항상 로드되는 규칙이다.
+function readRulePaths(name) {
+  const file = join(rulesSource, `${name}.md`);
+  if (!existsSync(file)) return [];
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(
+    readFileSync(file, "utf8"),
+  );
+  if (!frontmatter) return [];
+  const pathsLine = /^paths:\s*\[(.*)\]\s*$/m.exec(frontmatter[1]);
+  if (!pathsLine) return [];
+  return [...pathsLine[1].matchAll(/"([^"]+)"|'([^']+)'/g)].map(
+    (match) => match[1] ?? match[2],
+  );
+}
+
+function ruleScopeLabel(name) {
+  const paths = readRulePaths(name);
+  if (!paths.length) return "항상";
+  return paths.map((glob) => `\`${glob}\``).join(", ");
+}
 
 const claudeManagedBlock = [
   "<!-- agent-presets:start (자동 생성 — 이 블록은 직접 편집하지 마세요. `sync-agent-presets` 가 갱신합니다) -->",
   "## 공용 Claude 규칙 (@kyoungah/agent-presets)",
   "",
-  "`.claude/rules/` 규칙을 1차 기준으로 적용합니다. 갱신은 `sync-agent-presets` 재실행.",
+  "`.claude/rules/*.md` 는 Claude Code 가 자동 로드합니다. 해당 규칙을 1차 기준으로 적용하세요. 갱신은 `sync-agent-presets` 재실행.",
   "",
-  enabledRules.map((name) => `@.claude/rules/${name}.md`).join("\n"),
+  ...enabledRules.map(
+    (name) =>
+      `- \`.claude/rules/${name}.md\` (적용 범위: ${ruleScopeLabel(name)})`,
+  ),
   "<!-- agent-presets:end -->",
 ].join("\n");
 
@@ -333,7 +377,10 @@ const codexManagedBlock = [
   "",
   "코드 작업 전에 해당하는 `.codex/rules/` 문서를 읽고 1차 기준으로 적용합니다. 갱신은 `sync-agent-presets` 재실행.",
   "",
-  ...enabledRules.map((name) => `- \`.codex/rules/${name}.md\``),
+  ...enabledRules.map(
+    (name) =>
+      `- \`.codex/rules/${name}.md\` (적용 범위: ${ruleScopeLabel(name)})`,
+  ),
   "<!-- agent-presets:end -->",
 ].join("\n");
 
