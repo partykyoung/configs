@@ -5,5 +5,5 @@
 
 코드 작업 전에 해당하는 `.codex/rules/` 문서를 읽고 1차 기준으로 적용합니다. 갱신은 `sync-agent-presets` 재실행.
 
-- `.codex/rules/typescript.md`
+- `.codex/rules/typescript.md` (적용 범위: 항상)
 <!-- agent-presets:end -->
