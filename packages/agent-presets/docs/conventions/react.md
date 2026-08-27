@@ -79,3 +79,9 @@ paths: ["**/*.tsx"]
 ### 전역 상태 관리 도구 사용 시
 
 - Selector로 필요한 부분만 구독 (전체 스토어 구독 금지)
+
+## 성능 최적화 참고
+
+- React/Next.js 구현·리뷰·리팩터링·성능 최적화에는 `vercel-react-best-practices` 스킬을 사용한다.
+- 스킬은 성능 보완 지침이며, 본 문서와 충돌하면 본 문서를 우선한다.
+- 출처: [Vercel React Best Practices 소개](https://vercel.com/blog/introducing-react-best-practices), [Vercel 공식 Agent Skill](https://github.com/vercel-labs/agent-skills/tree/main/skills/react-best-practices)

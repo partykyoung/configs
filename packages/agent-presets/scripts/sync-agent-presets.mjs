@@ -7,13 +7,16 @@ import {
   writeFileSync,
   statSync,
   copyFileSync,
+  unlinkSync,
 } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { createInterface } from "node:readline/promises";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const packageRequire = createRequire(import.meta.url);
 
 // ── 프로젝트 루트 결정 ─────────────────────────────────────────────────
 //   pnpm 워크스페이스에서 실행하면 projectRoot가 패키지 디렉토리가 될 수 있다.
@@ -142,21 +145,22 @@ if (includeNextjs) {
   console.log("ℹ next 의존성 감지 — next 규칙을 에이전트 지침에 포함합니다.");
 }
 
-// ── 조건부 규칙 ────────────────────────────────────────────────────────
-//   Claude Code 는 `.claude/rules/*.md` 를 CLAUDE.md 와 함께 자동 로드한다.
-//   무관한 규칙 파일이 남아 있으면 그대로 컨텍스트에 실리므로,
-//   해당 의존성이 없으면 파일 자체를 복사하지 않는다.
-const conditionalRuleFiles = {
+// ── 조건부 컨벤션과 스킬 ────────────────────────────────────────────────
+//   소비 프로젝트의 의존성에 맞는 문서와 스킬만 복사한다.
+const conditionalConventionFiles = {
   "react.md": includeReact,
   "next.md": includeNextjs,
 };
-const isEnabledRuleFile = (rel) => conditionalRuleFiles[rel] ?? true;
+const isEnabledConventionFile = (rel) =>
+  conditionalConventionFiles[rel] ?? true;
 
-const enabledRules = [
-  ...(includeReact ? ["react"] : []),
+const enabledConventions = [
   "typescript",
+  ...(includeReact ? ["react"] : []),
   ...(includeNextjs ? ["next"] : []),
 ];
+
+const includeReactBestPractices = includeReact || includeNextjs;
 
 // ── 파일 단위 동기화 엔진 ────────────────────────────────────────────────
 const relLabel = (p) => relative(projectRoot, p) || ".";
@@ -286,26 +290,130 @@ async function runSync(plans) {
 }
 
 // ── 동기화 대상 정의 ───────────────────────────────────────────────────
-const rulesSource = join(here, "..", "rules");
-if (!existsSync(rulesSource)) {
-  console.error(`✗ Source rules directory not found: ${rulesSource}`);
+const conventionsSource = join(here, "..", "docs", "conventions");
+if (!existsSync(conventionsSource)) {
+  console.error(
+    `✗ Source conventions directory not found: ${conventionsSource}`,
+  );
   process.exit(1);
 }
 
 const commandsSource = join(here, "..", "commands");
 const skillsSource = join(here, "..", "skills");
 
+// ── 외부 스킬 설치 ─────────────────────────────────────────────────────
+//   Vercel 공식 불변 릴리스에서 필요한 스킬만 설치한다.
+const vercelReactBestPracticesSource =
+  "https://github.com/vercel-labs/agent-skills/tree/agent-skills-20e89cc4bb256eb7b1fcbdc68f7175284709a847/skills/react-best-practices";
+const externalSkillMarker = ".agent-presets-source.json";
+
+function hasCurrentExternalSkill(target) {
+  const skillFile = join(target, "SKILL.md");
+  const markerFile = join(target, externalSkillMarker);
+  if (!existsSync(skillFile) || !existsSync(markerFile)) return false;
+
+  try {
+    const marker = JSON.parse(readFileSync(markerFile, "utf8"));
+    return marker.source === vercelReactBestPracticesSource;
+  } catch {
+    return false;
+  }
+}
+
+function syncVercelReactBestPractices() {
+  if (!includeReactBestPractices) return;
+
+  const agents = [
+    ...(syncClaude ? ["claude-code"] : []),
+    ...(syncCodex ? ["codex"] : []),
+  ];
+  if (!agents.length) return;
+
+  const targets = [
+    ...(syncClaude
+      ? [join(projectRoot, ".claude", "skills", "vercel-react-best-practices")]
+      : []),
+    ...(syncCodex
+      ? [join(projectRoot, ".agents", "skills", "vercel-react-best-practices")]
+      : []),
+  ];
+  if (targets.every(hasCurrentExternalSkill)) {
+    console.log("✓ Vercel React Best Practices 스킬이 이미 최신입니다.");
+    return;
+  }
+
+  if (DRY) {
+    console.log(
+      `ℹ (--dry) Vercel React Best Practices 스킬을 ${agents.join(" + ")}에 설치합니다.`,
+    );
+    return;
+  }
+
+  let skillsPackagePath;
+  try {
+    skillsPackagePath = packageRequire.resolve("skills/package.json");
+  } catch {
+    console.error(
+      "✗ skills CLI를 찾을 수 없습니다. @kyoungah/agent-presets 의존성을 다시 설치하세요.",
+    );
+    process.exit(1);
+  }
+
+  const skillsCli = join(dirname(skillsPackagePath), "bin", "cli.mjs");
+  const result = spawnSync(
+    process.execPath,
+    [
+      skillsCli,
+      "add",
+      vercelReactBestPracticesSource,
+      "--skill",
+      "vercel-react-best-practices",
+      "--agent",
+      ...agents,
+      "--yes",
+    ],
+    {
+      cwd: projectRoot,
+      stdio: "inherit",
+      env: { ...process.env, DISABLE_TELEMETRY: "1" },
+    },
+  );
+
+  if (result.status !== 0) {
+    console.error("✗ Vercel React Best Practices 스킬 설치에 실패했습니다.");
+    process.exit(1);
+  }
+
+  const marker = `${JSON.stringify(
+    {
+      source: vercelReactBestPracticesSource,
+      skill: "vercel-react-best-practices",
+    },
+    null,
+    2,
+  )}\n`;
+  for (const target of targets) {
+    if (!existsSync(join(target, "SKILL.md"))) {
+      console.error(`✗ 설치된 스킬을 찾을 수 없습니다: ${relLabel(target)}`);
+      process.exit(1);
+    }
+    writeFileSync(join(target, externalSkillMarker), marker);
+  }
+}
+
+syncVercelReactBestPractices();
+
 const plans = [
+  {
+    label: "docs/conventions → docs/conventions",
+    ops: planArea(
+      conventionsSource,
+      join(projectRoot, "docs", "conventions"),
+      isEnabledConventionFile,
+    ),
+  },
   ...(syncClaude
     ? [
-        {
-          label: "rules → .claude/rules",
-          ops: planArea(
-            rulesSource,
-            join(projectRoot, ".claude", "rules"),
-            isEnabledRuleFile,
-          ),
-        },
         {
           label: "commands → .claude/commands",
           ops: planArea(
@@ -318,14 +426,6 @@ const plans = [
   ...(syncCodex
     ? [
         {
-          label: "rules → .codex/rules",
-          ops: planArea(
-            rulesSource,
-            join(projectRoot, ".codex", "rules"),
-            isEnabledRuleFile,
-          ),
-        },
-        {
           label: "skills → .agents/skills",
           ops: planArea(skillsSource, join(projectRoot, ".agents", "skills")),
         },
@@ -335,11 +435,76 @@ const plans = [
 
 const summary = await runSync(plans);
 
+function removeManagedCopy({ sourceFile, targetFile, removedLabel }) {
+  if (!existsSync(sourceFile) || !existsSync(targetFile)) return 0;
+
+  if (!readFileSync(targetFile).equals(readFileSync(sourceFile))) {
+    console.warn(`⚠ 수정된 파일을 보존합니다: ${relLabel(targetFile)}`);
+    return 0;
+  }
+
+  if (DRY) {
+    console.log(`ℹ (--dry) ${removedLabel}: ${relLabel(targetFile)}`);
+  } else {
+    unlinkSync(targetFile);
+    console.log(`✓ ${removedLabel}: ${relLabel(targetFile)}`);
+  }
+  return 1;
+}
+
+// ── 비활성 컨벤션 정리 ─────────────────────────────────────────────────
+//   의존성이 제거된 뒤 남은 복사본도 프리셋 원문과 같을 때만 삭제한다.
+function cleanupDisabledConventions() {
+  let removed = 0;
+  const disabledConventions = [
+    ...(!includeReact ? ["react"] : []),
+    ...(!includeNextjs ? ["next"] : []),
+  ];
+
+  for (const name of disabledConventions) {
+    removed += removeManagedCopy({
+      sourceFile: join(conventionsSource, `${name}.md`),
+      targetFile: join(projectRoot, "docs", "conventions", `${name}.md`),
+      removedLabel: "비활성 컨벤션 삭제",
+    });
+  }
+
+  return removed;
+}
+
+const removedDisabledConventions = cleanupDisabledConventions();
+
+// ── 1.0.0 마이그레이션: 기존 자동 로드 규칙 정리 ──────────────────────
+//   프리셋 원문과 정확히 같은 파일만 삭제한다. 사용자가 수정한 파일은 보존한다.
+function cleanupLegacyRules() {
+  const agentDirs = [
+    ...(syncClaude ? [join(projectRoot, ".claude", "rules")] : []),
+    ...(syncCodex ? [join(projectRoot, ".codex", "rules")] : []),
+  ];
+  let removed = 0;
+
+  for (const agentDir of agentDirs) {
+    for (const name of ["typescript", "react", "next"]) {
+      const legacyFile = join(agentDir, `${name}.md`);
+      const conventionFile = join(conventionsSource, `${name}.md`);
+      removed += removeManagedCopy({
+        sourceFile: conventionFile,
+        targetFile: legacyFile,
+        removedLabel: "기존 규칙 삭제",
+      });
+    }
+  }
+
+  return removed;
+}
+
+const removedLegacyRules = cleanupLegacyRules();
+
 // ── 에이전트 지침 관리 블록 주입 ──────────────────────────────────────────
-// 규칙 파일의 `paths:` 프론트매터(인라인 배열 형식)를 읽어 적용 범위를 문서화한다.
+// 컨벤션의 `paths:` 프론트매터(인라인 배열 형식)를 읽어 적용 범위를 문서화한다.
 //   프론트매터가 없으면 항상 로드되는 규칙이다.
-function readRulePaths(name) {
-  const file = join(rulesSource, `${name}.md`);
+function readConventionPaths(name) {
+  const file = join(conventionsSource, `${name}.md`);
   if (!existsSync(file)) return [];
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(
     readFileSync(file, "utf8"),
@@ -352,37 +517,43 @@ function readRulePaths(name) {
   );
 }
 
-function ruleScopeLabel(name) {
-  const paths = readRulePaths(name);
+function conventionScopeLabel(name) {
+  const paths = readConventionPaths(name);
   if (!paths.length) return "항상";
   return paths.map((glob) => `\`${glob}\``).join(", ");
 }
 
-const claudeManagedBlock = [
-  "<!-- agent-presets:start (자동 생성 — 이 블록은 직접 편집하지 마세요. `sync-agent-presets` 가 갱신합니다) -->",
-  "## 공용 Claude 규칙 (@kyoungah/agent-presets)",
-  "",
-  "`.claude/rules/*.md` 는 Claude Code 가 자동 로드합니다. 해당 규칙을 1차 기준으로 적용하세요. 갱신은 `sync-agent-presets` 재실행.",
-  "",
-  ...enabledRules.map(
-    (name) =>
-      `- \`.claude/rules/${name}.md\` (적용 범위: ${ruleScopeLabel(name)})`,
-  ),
-  "<!-- agent-presets:end -->",
-].join("\n");
+function createManagedBlock(agentName) {
+  return [
+    "<!-- agent-presets:start (자동 생성 — 이 블록은 직접 편집하지 마세요. `sync-agent-presets` 가 갱신합니다) -->",
+    "",
+    `## 공용 ${agentName} 지침 (@kyoungah/agent-presets)`,
+    "",
+    "코드 작업 전에 다음 공통 컨벤션을 순서대로 읽고 적용합니다.",
+    "",
+    ...enabledConventions.map(
+      (name, index) =>
+        `${index + 1}. \`docs/conventions/${name}.md\` (적용 범위: ${conventionScopeLabel(name)})`,
+    ),
+    "",
+    "컨벤션이 충돌하면 더 구체적인 규칙을 우선합니다: Next.js > React > TypeScript.",
+    "프로젝트 고유 지침은 공통 컨벤션보다 우선합니다.",
+    ...(includeReactBestPractices
+      ? [
+          "",
+          "React/Next.js 구현·리뷰·리팩터링·성능 최적화에는 `vercel-react-best-practices` 스킬을 사용합니다.",
+          "스킬과 공통 컨벤션이 충돌하면 `docs/conventions/`를 우선합니다.",
+        ]
+      : []),
+    "",
+    "갱신은 `sync-agent-presets`를 재실행합니다.",
+    "",
+    "<!-- agent-presets:end -->",
+  ].join("\n");
+}
 
-const codexManagedBlock = [
-  "<!-- agent-presets:start (자동 생성 — 이 블록은 직접 편집하지 마세요. `sync-agent-presets` 가 갱신합니다) -->",
-  "## 공용 Codex 규칙 (@kyoungah/agent-presets)",
-  "",
-  "코드 작업 전에 해당하는 `.codex/rules/` 문서를 읽고 1차 기준으로 적용합니다. 갱신은 `sync-agent-presets` 재실행.",
-  "",
-  ...enabledRules.map(
-    (name) =>
-      `- \`.codex/rules/${name}.md\` (적용 범위: ${ruleScopeLabel(name)})`,
-  ),
-  "<!-- agent-presets:end -->",
-].join("\n");
+const claudeManagedBlock = createManagedBlock("Claude");
+const codexManagedBlock = createManagedBlock("Codex");
 
 const blockRegex =
   /<!-- (?:agent|claude|codex)-presets:start[\s\S]*?(?:agent|claude|codex)-presets:end -->/i;
@@ -446,6 +617,9 @@ if (!DRY) {
     `변경 ${summary.changed}`,
     `동일 ${summary.same}`,
   ];
+  if (removedDisabledConventions)
+    parts.push(`비활성 컨벤션 삭제 ${removedDisabledConventions}`);
+  if (removedLegacyRules) parts.push(`기존 규칙 삭제 ${removedLegacyRules}`);
   if (summary.skipped) parts.push(`건너뜀 ${summary.skipped}`);
   console.log(`\n✓ 동기화 완료 — ${parts.join(" · ")}`);
 }

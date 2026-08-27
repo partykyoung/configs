@@ -13,10 +13,13 @@
     "sync": "node scripts/sync-agent-presets.mjs"
   },
   "files": [
-    "rules",
+    "docs",
     "commands",
     "skills",
     "scripts",
     "README.md"
-  ]
+  ],
+  "dependencies": {
+    "skills": "1.4.0"
+  }
 }
