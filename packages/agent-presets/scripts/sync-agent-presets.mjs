@@ -14,6 +14,7 @@ import { dirname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { createInterface } from "node:readline/promises";
+import { createHash } from "node:crypto";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRequire = createRequire(import.meta.url);
@@ -298,7 +299,6 @@ if (!existsSync(conventionsSource)) {
   process.exit(1);
 }
 
-const commandsSource = join(here, "..", "commands");
 const skillsSource = join(here, "..", "skills");
 
 // ── 외부 스킬 설치 ─────────────────────────────────────────────────────
@@ -415,11 +415,8 @@ const plans = [
   ...(syncClaude
     ? [
         {
-          label: "commands → .claude/commands",
-          ops: planArea(
-            commandsSource,
-            join(projectRoot, ".claude", "commands"),
-          ),
+          label: "skills → .claude/skills",
+          ops: planArea(skillsSource, join(projectRoot, ".claude", "skills")),
         },
       ]
     : []),
@@ -499,6 +496,46 @@ function cleanupLegacyRules() {
 }
 
 const removedLegacyRules = cleanupLegacyRules();
+
+// ── 1.0.0 마이그레이션: Claude legacy commands 정리 ───────────────────
+//   기존 프리셋이 생성한 원본과 hash가 같은 파일만 삭제한다.
+function cleanupLegacyCommands() {
+  if (!syncClaude) return 0;
+
+  const legacyCommands = {
+    "commit.md":
+      "f7a9a58729878d04d16dfee5f730978e79bac9fc2f6018e5d8853376f30e4211",
+    "pr.md": "a111e509fd25910db7dda91f6da9961a6ef8808e4c60183192564e55cfd5dc2c",
+  };
+  let removed = 0;
+
+  for (const [name, expectedHash] of Object.entries(legacyCommands)) {
+    const targetFile = join(projectRoot, ".claude", "commands", name);
+    if (!existsSync(targetFile)) continue;
+
+    const actualHash = createHash("sha256")
+      .update(readFileSync(targetFile))
+      .digest("hex");
+    if (actualHash !== expectedHash) {
+      console.warn(`⚠ 수정된 파일을 보존합니다: ${relLabel(targetFile)}`);
+      continue;
+    }
+
+    if (DRY) {
+      console.log(
+        `ℹ (--dry) 기존 Claude command 삭제: ${relLabel(targetFile)}`,
+      );
+    } else {
+      unlinkSync(targetFile);
+      console.log(`✓ 기존 Claude command 삭제: ${relLabel(targetFile)}`);
+    }
+    removed++;
+  }
+
+  return removed;
+}
+
+const removedLegacyCommands = cleanupLegacyCommands();
 
 // ── 에이전트 지침 관리 블록 주입 ──────────────────────────────────────────
 // 컨벤션의 `paths:` 프론트매터(인라인 배열 형식)를 읽어 적용 범위를 문서화한다.
@@ -620,6 +657,8 @@ if (!DRY) {
   if (removedDisabledConventions)
     parts.push(`비활성 컨벤션 삭제 ${removedDisabledConventions}`);
   if (removedLegacyRules) parts.push(`기존 규칙 삭제 ${removedLegacyRules}`);
+  if (removedLegacyCommands)
+    parts.push(`기존 Claude command 삭제 ${removedLegacyCommands}`);
   if (summary.skipped) parts.push(`건너뜀 ${summary.skipped}`);
   console.log(`\n✓ 동기화 완료 — ${parts.join(" · ")}`);
 }
