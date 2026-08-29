@@ -10,7 +10,9 @@
     "sync-agent-presets": "scripts/sync-agent-presets.mjs"
   },
   "scripts": {
-    "sync": "node scripts/sync-agent-presets.mjs"
+    "sync": "node scripts/sync-agent-presets.mjs",
+    "sync:check": "node scripts/sync-agent-presets.mjs --check",
+    "sync:doctor": "node scripts/sync-agent-presets.mjs --doctor"
   },
   "files": [
     "docs",

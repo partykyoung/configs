@@ -18,6 +18,9 @@ import { createHash } from "node:crypto";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRequire = createRequire(import.meta.url);
+const presetPackage = JSON.parse(
+  readFileSync(join(here, "..", "package.json"), "utf8"),
+);
 
 // ── 프로젝트 루트 결정 ─────────────────────────────────────────────────
 //   pnpm 워크스페이스에서 실행하면 projectRoot가 패키지 디렉토리가 될 수 있다.
@@ -37,11 +40,27 @@ const projectRoot = findProjectRoot();
 //   (기본)          TTY에서는 에이전트를 선택하고, 비대화형에서는 모두 동기화.
 //   --agent <names> claude,codex 형식으로 동기화 대상을 지정.
 //   --dry|--preview  쓰지 않고 바뀔 부분을 unified diff 로 미리보기만.
+//   --check          쓰지 않고 동기화 상태만 검사. 변경 필요 시 exit code 1.
+//   --doctor         쓰지 않고 프로젝트 감지 결과와 파일 상태를 진단.
 //   --interactive|-i 변경 파일마다 diff 를 보여주고 적용/건너뜀/전체/중단 선택.
 //                    TTY 가 아니면 경고 후 기본 동작으로 fallback.
 const argv = process.argv.slice(2);
 const DRY = argv.includes("--dry") || argv.includes("--preview");
+const CHECK = argv.includes("--check");
+const DOCTOR = argv.includes("--doctor");
+const READ_ONLY = DRY || CHECK || DOCTOR;
+const activeReadOnlyModes = [DRY, CHECK, DOCTOR].filter(Boolean).length;
+if (activeReadOnlyModes > 1) {
+  console.error("✗ --dry, --check, --doctor 는 함께 사용할 수 없습니다.");
+  process.exit(1);
+}
+
 let INTERACTIVE = argv.includes("--interactive") || argv.includes("-i");
+if (READ_ONLY && INTERACTIVE) {
+  console.error("✗ read-only 모드와 --interactive 는 함께 사용할 수 없습니다.");
+  process.exit(1);
+}
+
 if (INTERACTIVE && !process.stdin.isTTY) {
   console.warn(
     "⚠ --interactive 는 TTY 가 필요합니다 (비대화형 환경). 기본 덮어쓰기로 진행합니다.",
@@ -117,11 +136,14 @@ const selectedAgentLabel = [
 console.log(`ℹ 동기화 대상: ${selectedAgentLabel}`);
 
 // 소비처 package.json 의 모든 의존성을 하나로 합쳐 반환.
+let consumerPackageStatus = "missing";
+
 function getConsumerDeps() {
   const pkgPath = join(projectRoot, "package.json");
   if (!existsSync(pkgPath)) return {};
   try {
     const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+    consumerPackageStatus = "valid";
     return {
       ...pkg.dependencies,
       ...pkg.devDependencies,
@@ -129,6 +151,7 @@ function getConsumerDeps() {
       ...pkg.peerDependencies,
     };
   } catch {
+    consumerPackageStatus = "invalid";
     return {};
   }
 }
@@ -224,10 +247,13 @@ async function runSync(plans) {
     changed: 0,
     same: ops.length - changed.length,
     skipped: 0,
+    pendingNew: changed.filter((o) => o.status === "new").length,
+    pendingChanged: changed.filter((o) => o.status === "changed").length,
   };
 
   if (!changed.length) {
-    console.log("✓ 모든 프리셋 파일이 이미 최신입니다 (변경 없음).");
+    if (!CHECK && !DOCTOR)
+      console.log("✓ 모든 프리셋 파일이 이미 최신입니다 (변경 없음).");
     return summary;
   }
 
@@ -248,6 +274,8 @@ async function runSync(plans) {
     );
     return summary;
   }
+
+  if (CHECK || DOCTOR) return summary;
 
   let rl = null;
   let applyRest = false;
@@ -305,48 +333,97 @@ const skillsSource = join(here, "..", "skills");
 //   Vercel 공식 불변 릴리스에서 필요한 스킬만 설치한다.
 const vercelReactBestPracticesSource =
   "https://github.com/vercel-labs/agent-skills/tree/agent-skills-20e89cc4bb256eb7b1fcbdc68f7175284709a847/skills/react-best-practices";
+const vercelReactBestPracticesRevision =
+  vercelReactBestPracticesSource.match(/\/tree\/([^/]+)\//)?.[1] ?? "unknown";
 const externalSkillMarker = ".agent-presets-source.json";
 
-function hasCurrentExternalSkill(target) {
+function inspectExternalSkill(target) {
   const skillFile = join(target, "SKILL.md");
   const markerFile = join(target, externalSkillMarker);
-  if (!existsSync(skillFile) || !existsSync(markerFile)) return false;
+  if (!existsSync(skillFile)) return "missing";
+  if (!existsSync(markerFile)) return "missing-marker";
 
   try {
     const marker = JSON.parse(readFileSync(markerFile, "utf8"));
-    return marker.source === vercelReactBestPracticesSource;
+    return marker.source === vercelReactBestPracticesSource
+      ? "current"
+      : "outdated";
   } catch {
-    return false;
+    return "invalid-marker";
   }
 }
 
 function syncVercelReactBestPractices() {
-  if (!includeReactBestPractices) return;
+  if (!includeReactBestPractices) {
+    return {
+      required: false,
+      source: vercelReactBestPracticesSource,
+      targets: [],
+    };
+  }
 
   const agents = [
     ...(syncClaude ? ["claude-code"] : []),
     ...(syncCodex ? ["codex"] : []),
   ];
-  if (!agents.length) return;
+  if (!agents.length) {
+    return {
+      required: true,
+      source: vercelReactBestPracticesSource,
+      targets: [],
+    };
+  }
 
   const targets = [
     ...(syncClaude
-      ? [join(projectRoot, ".claude", "skills", "vercel-react-best-practices")]
+      ? [
+          {
+            agent: "Claude",
+            path: join(
+              projectRoot,
+              ".claude",
+              "skills",
+              "vercel-react-best-practices",
+            ),
+          },
+        ]
       : []),
     ...(syncCodex
-      ? [join(projectRoot, ".agents", "skills", "vercel-react-best-practices")]
+      ? [
+          {
+            agent: "Codex",
+            path: join(
+              projectRoot,
+              ".agents",
+              "skills",
+              "vercel-react-best-practices",
+            ),
+          },
+        ]
       : []),
   ];
-  if (targets.every(hasCurrentExternalSkill)) {
-    console.log("✓ Vercel React Best Practices 스킬이 이미 최신입니다.");
-    return;
+  const createState = () => ({
+    required: true,
+    source: vercelReactBestPracticesSource,
+    targets: targets.map((target) => ({
+      ...target,
+      status: inspectExternalSkill(target.path),
+    })),
+  });
+  const initialState = createState();
+  if (initialState.targets.every((target) => target.status === "current")) {
+    if (!CHECK && !DOCTOR)
+      console.log("✓ Vercel React Best Practices 스킬이 이미 최신입니다.");
+    return initialState;
   }
 
-  if (DRY) {
-    console.log(
-      `ℹ (--dry) Vercel React Best Practices 스킬을 ${agents.join(" + ")}에 설치합니다.`,
-    );
-    return;
+  if (READ_ONLY) {
+    if (DRY) {
+      console.log(
+        `ℹ (--dry) Vercel React Best Practices 스킬을 ${agents.join(" + ")}에 설치합니다.`,
+      );
+    }
+    return initialState;
   }
 
   let skillsPackagePath;
@@ -393,15 +470,19 @@ function syncVercelReactBestPractices() {
     2,
   )}\n`;
   for (const target of targets) {
-    if (!existsSync(join(target, "SKILL.md"))) {
-      console.error(`✗ 설치된 스킬을 찾을 수 없습니다: ${relLabel(target)}`);
+    if (!existsSync(join(target.path, "SKILL.md"))) {
+      console.error(
+        `✗ 설치된 스킬을 찾을 수 없습니다: ${relLabel(target.path)}`,
+      );
       process.exit(1);
     }
-    writeFileSync(join(target, externalSkillMarker), marker);
+    writeFileSync(join(target.path, externalSkillMarker), marker);
   }
+
+  return createState();
 }
 
-syncVercelReactBestPractices();
+const externalSkillState = syncVercelReactBestPractices();
 
 const plans = [
   {
@@ -432,18 +513,36 @@ const plans = [
 
 const summary = await runSync(plans);
 
+const cleanupDiagnostics = [];
+
 function removeManagedCopy({ sourceFile, targetFile, removedLabel }) {
   if (!existsSync(sourceFile) || !existsSync(targetFile)) return 0;
 
   if (!readFileSync(targetFile).equals(readFileSync(sourceFile))) {
-    console.warn(`⚠ 수정된 파일을 보존합니다: ${relLabel(targetFile)}`);
+    cleanupDiagnostics.push({
+      label: removedLabel,
+      path: targetFile,
+      status: "customized",
+    });
+    if (!CHECK && !DOCTOR)
+      console.warn(`⚠ 수정된 파일을 보존합니다: ${relLabel(targetFile)}`);
     return 0;
   }
 
-  if (DRY) {
-    console.log(`ℹ (--dry) ${removedLabel}: ${relLabel(targetFile)}`);
+  if (READ_ONLY) {
+    cleanupDiagnostics.push({
+      label: removedLabel,
+      path: targetFile,
+      status: "pending",
+    });
+    if (DRY) console.log(`ℹ (--dry) ${removedLabel}: ${relLabel(targetFile)}`);
   } else {
     unlinkSync(targetFile);
+    cleanupDiagnostics.push({
+      label: removedLabel,
+      path: targetFile,
+      status: "removed",
+    });
     console.log(`✓ ${removedLabel}: ${relLabel(targetFile)}`);
   }
   return 1;
@@ -517,16 +616,34 @@ function cleanupLegacyCommands() {
       .update(readFileSync(targetFile))
       .digest("hex");
     if (actualHash !== expectedHash) {
-      console.warn(`⚠ 수정된 파일을 보존합니다: ${relLabel(targetFile)}`);
+      cleanupDiagnostics.push({
+        label: "기존 Claude command 삭제",
+        path: targetFile,
+        status: "customized",
+      });
+      if (!CHECK && !DOCTOR)
+        console.warn(`⚠ 수정된 파일을 보존합니다: ${relLabel(targetFile)}`);
       continue;
     }
 
-    if (DRY) {
-      console.log(
-        `ℹ (--dry) 기존 Claude command 삭제: ${relLabel(targetFile)}`,
-      );
+    if (READ_ONLY) {
+      cleanupDiagnostics.push({
+        label: "기존 Claude command 삭제",
+        path: targetFile,
+        status: "pending",
+      });
+      if (DRY) {
+        console.log(
+          `ℹ (--dry) 기존 Claude command 삭제: ${relLabel(targetFile)}`,
+        );
+      }
     } else {
       unlinkSync(targetFile);
+      cleanupDiagnostics.push({
+        label: "기존 Claude command 삭제",
+        path: targetFile,
+        status: "removed",
+      });
       console.log(`✓ 기존 Claude command 삭제: ${relLabel(targetFile)}`);
     }
     removed++;
@@ -612,43 +729,221 @@ function syncAgentDoc({ path, title, managedBlock, legacyManualMarker }) {
     (legacyManualMarker && current?.includes(legacyManualMarker))
   ) {
     console.log(`ℹ ${path} 에 manual 마커가 있어 주입을 건너뜁니다.`);
-    return;
+    return { path, title, status: "manual" };
   }
 
   const next = nextAgentDoc(current, title, managedBlock);
-  if (next === current) return;
-  if (DRY) {
-    console.log(
-      `\nℹ (--dry) ${title} 관리 블록이 ${current == null ? "생성" : "갱신"}됩니다. 쓰지 않음.`,
-    );
+  if (next === current) return { path, title, status: "same" };
+  const status = current == null ? "new" : "changed";
+  if (READ_ONLY) {
+    if (DRY) {
+      console.log(
+        `\nℹ (--dry) ${title} 관리 블록이 ${current == null ? "생성" : "갱신"}됩니다. 쓰지 않음.`,
+      );
+    }
   } else {
     writeFileSync(path, next);
     console.log(
       `✓ ${title} 관리 블록 ${current == null ? "생성" : "갱신"} (${path})`,
     );
   }
+  return { path, title, status };
 }
 
+const agentDocResults = [];
+
 if (syncClaude) {
-  syncAgentDoc({
-    path: join(projectRoot, "CLAUDE.md"),
-    title: "CLAUDE.md",
-    managedBlock: claudeManagedBlock,
-    legacyManualMarker: "claude-presets:manual",
-  });
+  agentDocResults.push(
+    syncAgentDoc({
+      path: join(projectRoot, "CLAUDE.md"),
+      title: "CLAUDE.md",
+      managedBlock: claudeManagedBlock,
+      legacyManualMarker: "claude-presets:manual",
+    }),
+  );
 }
 
 if (syncCodex) {
-  syncAgentDoc({
-    path: join(projectRoot, "AGENTS.md"),
-    title: "AGENTS.md",
-    managedBlock: codexManagedBlock,
-    legacyManualMarker: "codex-presets:manual",
-  });
+  agentDocResults.push(
+    syncAgentDoc({
+      path: join(projectRoot, "AGENTS.md"),
+      title: "AGENTS.md",
+      managedBlock: codexManagedBlock,
+      legacyManualMarker: "codex-presets:manual",
+    }),
+  );
+}
+
+function getPendingDiagnostics() {
+  return {
+    environment:
+      consumerPackageStatus === "invalid"
+        ? ["package.json을 파싱할 수 없어 의존성 감지가 불완전합니다."]
+        : [],
+    files: plans.flatMap((plan) =>
+      plan.ops
+        .filter((op) => op.status !== "same")
+        .map((op) => ({
+          label: plan.label,
+          path: op.t,
+          status: op.status,
+        })),
+    ),
+    agentDocs: agentDocResults.filter((result) =>
+      ["new", "changed"].includes(result.status),
+    ),
+    cleanup: cleanupDiagnostics.filter(
+      (diagnostic) => diagnostic.status === "pending",
+    ),
+    externalSkills: externalSkillState.targets.filter(
+      (target) => target.status !== "current",
+    ),
+  };
+}
+
+function pendingCount(diagnostics) {
+  return (
+    diagnostics.environment.length +
+    diagnostics.files.length +
+    diagnostics.agentDocs.length +
+    diagnostics.cleanup.length +
+    diagnostics.externalSkills.length
+  );
+}
+
+function printPendingDiagnostics(diagnostics) {
+  for (const message of diagnostics.environment) {
+    console.log(`- [환경 오류] ${message}`);
+  }
+  for (const item of diagnostics.files) {
+    console.log(
+      `- [${item.status === "new" ? "신규" : "변경"}] ${relLabel(item.path)} (${item.label})`,
+    );
+  }
+  for (const item of diagnostics.agentDocs) {
+    console.log(
+      `- [${item.status === "new" ? "신규" : "변경"}] ${relLabel(item.path)} 관리 블록`,
+    );
+  }
+  for (const item of diagnostics.cleanup) {
+    console.log(`- [삭제] ${relLabel(item.path)} (${item.label})`);
+  }
+  for (const item of diagnostics.externalSkills) {
+    console.log(
+      `- [외부 스킬 ${externalSkillStatusLabel(item.status)}] ${item.agent}: ${relLabel(item.path)}`,
+    );
+  }
+}
+
+function externalSkillStatusLabel(status) {
+  const labels = {
+    current: "최신",
+    missing: "없음",
+    "missing-marker": "marker 없음",
+    "invalid-marker": "marker 오류",
+    outdated: "갱신 필요",
+  };
+  return labels[status] ?? status;
+}
+
+function bundledSkillNames() {
+  return readdirSync(skillsSource, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        existsSync(join(skillsSource, entry.name, "SKILL.md")),
+    )
+    .map((entry) => entry.name)
+    .sort();
+}
+
+function printDoctorReport() {
+  const diagnostics = getPendingDiagnostics();
+  const customized = cleanupDiagnostics.filter(
+    (diagnostic) => diagnostic.status === "customized",
+  );
+  const packageStatusLabels = {
+    valid: "정상",
+    missing: "없음",
+    invalid: "JSON 오류",
+  };
+
+  console.log("\n=== Agent Presets Doctor ===");
+  console.log(`프리셋: ${presetPackage.name}@${presetPackage.version}`);
+  console.log(`프로젝트: ${projectRoot}`);
+  console.log(`대상 에이전트: ${selectedAgentLabel}`);
+  console.log(`package.json: ${packageStatusLabels[consumerPackageStatus]}`);
+  console.log(
+    `감지 스택: TypeScript${includeReact ? " + React" : ""}${includeNextjs ? " + Next.js" : ""}`,
+  );
+  console.log(
+    `적용 컨벤션: ${enabledConventions.map((name) => `${name}.md`).join(", ")}`,
+  );
+  console.log(`공용 스킬: ${bundledSkillNames().join(", ") || "없음"}`);
+  console.log(
+    `프리셋 파일: 최신 ${summary.same} · 신규 필요 ${summary.pendingNew} · 변경 필요 ${summary.pendingChanged}`,
+  );
+
+  for (const result of agentDocResults) {
+    const labels = {
+      same: "최신",
+      new: "생성 필요",
+      changed: "갱신 필요",
+      manual: "manual 마커로 제외",
+    };
+    console.log(`${result.title}: ${labels[result.status]}`);
+  }
+
+  if (externalSkillState.required) {
+    console.log("외부 스킬: vercel-react-best-practices");
+    console.log(`  revision: ${vercelReactBestPracticesRevision}`);
+    console.log(`  source: ${externalSkillState.source}`);
+    for (const target of externalSkillState.targets) {
+      console.log(
+        `  ${target.agent}: ${externalSkillStatusLabel(target.status)}`,
+      );
+    }
+  } else {
+    console.log("외부 스킬: 해당 없음 (React/Next.js 미감지)");
+  }
+
+  if (customized.length) {
+    console.log("보존된 사용자 수정 파일:");
+    for (const item of customized) {
+      console.log(`- ${relLabel(item.path)} (${item.label})`);
+    }
+  }
+
+  const count = pendingCount(diagnostics);
+  if (count) {
+    console.log(`\n⚠ 동기화 필요: ${count}건`);
+    printPendingDiagnostics(diagnostics);
+  } else {
+    console.log("\n✓ 프리셋 상태가 정상입니다.");
+  }
+}
+
+function printCheckResult() {
+  const diagnostics = getPendingDiagnostics();
+  const count = pendingCount(diagnostics);
+  console.log("\n=== Agent Presets Check ===");
+  if (!count) {
+    console.log("✓ 모든 프리셋 파일이 최신입니다.");
+    return;
+  }
+
+  console.log(`✗ 동기화가 필요한 항목이 ${count}건 있습니다.`);
+  printPendingDiagnostics(diagnostics);
+  console.log("\n`sync-agent-presets`를 실행해 갱신하세요.");
+  process.exitCode = 1;
 }
 
 // ── 최종 요약 ────────────────────────────────────────────────────────────
-if (!DRY) {
+if (DOCTOR) {
+  printDoctorReport();
+} else if (CHECK) {
+  printCheckResult();
+} else if (!DRY) {
   const parts = [
     `신규 ${summary.new}`,
     `변경 ${summary.changed}`,
