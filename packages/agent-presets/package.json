@@ -18,6 +18,7 @@
     "docs",
     "skills",
     "scripts",
+    "migrations",
     "README.md"
   ],
   "dependencies": {
