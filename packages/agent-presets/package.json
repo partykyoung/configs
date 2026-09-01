@@ -12,7 +12,8 @@
   "scripts": {
     "sync": "node scripts/sync-agent-presets.mjs",
     "sync:check": "node scripts/sync-agent-presets.mjs --check",
-    "sync:doctor": "node scripts/sync-agent-presets.mjs --doctor"
+    "sync:doctor": "node scripts/sync-agent-presets.mjs --doctor",
+    "test": "node --test test/*.test.mjs"
   },
   "files": [
     "docs",
