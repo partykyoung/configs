@@ -1,0 +1,81 @@
+{
+  "files": [
+    {
+      "path": ".claude/commands/commit.md",
+      "source": "legacy/commands/commit.md",
+      "sha256": "f7a9a58729878d04d16dfee5f730978e79bac9fc2f6018e5d8853376f30e4211",
+      "group": "claude",
+      "kind": "legacy"
+    },
+    {
+      "path": ".claude/commands/pr.md",
+      "source": "legacy/commands/pr.md",
+      "sha256": "a111e509fd25910db7dda91f6da9961a6ef8808e4c60183192564e55cfd5dc2c",
+      "group": "claude",
+      "kind": "legacy"
+    },
+    {
+      "path": ".claude/rules/next.md",
+      "source": "docs/conventions/next.md",
+      "sha256": "b0784b1c7b62026b05704826655a26e128d51f17adc82bd3258cfe50409223e9",
+      "group": "claude",
+      "kind": "legacy"
+    },
+    {
+      "path": ".claude/rules/react.md",
+      "source": "docs/conventions/react.md",
+      "sha256": "beaeba3ae810f51fb9d1439edd0be3f7de92acb3bd85743bc7326a59743e0c6e",
+      "group": "claude",
+      "kind": "legacy"
+    },
+    {
+      "path": ".claude/rules/typescript.md",
+      "source": "docs/conventions/typescript.md",
+      "sha256": "2a0dbd088bf3de006a9642bd0b6f849fa8f4cf838d5b02a7b14865dc28eaa68a",
+      "group": "claude",
+      "kind": "legacy"
+    },
+    {
+      "path": ".codex/rules/next.md",
+      "source": "docs/conventions/next.md",
+      "sha256": "b0784b1c7b62026b05704826655a26e128d51f17adc82bd3258cfe50409223e9",
+      "group": "codex",
+      "kind": "legacy"
+    },
+    {
+      "path": ".codex/rules/react.md",
+      "source": "docs/conventions/react.md",
+      "sha256": "beaeba3ae810f51fb9d1439edd0be3f7de92acb3bd85743bc7326a59743e0c6e",
+      "group": "codex",
+      "kind": "legacy"
+    },
+    {
+      "path": ".codex/rules/typescript.md",
+      "source": "docs/conventions/typescript.md",
+      "sha256": "2a0dbd088bf3de006a9642bd0b6f849fa8f4cf838d5b02a7b14865dc28eaa68a",
+      "group": "codex",
+      "kind": "legacy"
+    },
+    {
+      "path": "docs/conventions/next.md",
+      "source": "docs/conventions/next.md",
+      "sha256": "b0784b1c7b62026b05704826655a26e128d51f17adc82bd3258cfe50409223e9",
+      "group": "common",
+      "kind": "copy"
+    },
+    {
+      "path": "docs/conventions/react.md",
+      "source": "docs/conventions/react.md",
+      "sha256": "beaeba3ae810f51fb9d1439edd0be3f7de92acb3bd85743bc7326a59743e0c6e",
+      "group": "common",
+      "kind": "copy"
+    },
+    {
+      "path": "docs/conventions/typescript.md",
+      "source": "docs/conventions/typescript.md",
+      "sha256": "2a0dbd088bf3de006a9642bd0b6f849fa8f4cf838d5b02a7b14865dc28eaa68a",
+      "group": "common",
+      "kind": "copy"
+    }
+  ]
+}

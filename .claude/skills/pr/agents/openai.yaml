@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create PR"
+  short_description: "현재 브랜치의 변경사항으로 GitHub PR 생성"
+  default_prompt: "Use $pr to create a pull request from the current branch."

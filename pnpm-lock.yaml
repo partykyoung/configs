@@ -8,6 +8,12 @@ importers:
 
   .: {}
 
+  packages/agent-presets:
+    dependencies:
+      skills:
+        specifier: 1.4.0
+        version: 1.4.0
+
   packages/eslint-config:
     dependencies:
       '@eslint/js':
@@ -1118,6 +1124,11 @@ packages:
   side-channel@1.1.0:
     resolution: {integrity: sha512-ZX99e6tRweoUXqR+VBrslhda51Nh5MTQwou5tnUDgbtyM0dBgmhEDtWGP/xbKn6hqfPRHujUNwz5fy/wbbhnpw==}
     engines: {node: '>= 0.4'}
+
+  skills@1.4.0:
+    resolution: {integrity: sha512-uZd/HvRdrcNQjb8dwXlfDfYuSVpeVlEmWgpR8BS2MWA3/bi2eaQIg4RKtSyGU7twPTapW5V4ks/n92w7nugBcQ==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   stop-iteration-iterator@1.1.0:
     resolution: {integrity: sha512-eLoXW/DHyl62zxY4SCaIgnRhuMr6ri4juEYARS8E6sCEqzKpOiE521Ucofdx+KnDZl5xmvGYaaKCk5FEOxJCoQ==}
@@ -2580,6 +2591,8 @@ snapshots:
       side-channel-list: 1.0.1
       side-channel-map: 1.0.1
       side-channel-weakmap: 1.0.2
+
+  skills@1.4.0: {}
 
   stop-iteration-iterator@1.1.0:
     dependencies:

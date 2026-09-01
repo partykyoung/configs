@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "preset": {
+    "name": "@kyoungah/agent-presets",
+    "version": "1.0.0"
+  },
+  "files": [
+    {
+      "path": ".agents/skills/commit/agents/openai.yaml",
+      "source": "skills/commit/agents/openai.yaml",
+      "sha256": "31fe8123cdc7bdf3d4805abe3e2ba8473390f62f7349422c23198ae238aaf966",
+      "group": "codex",
+      "kind": "copy"
+    },
+    {
+      "path": ".agents/skills/commit/SKILL.md",
+      "source": "skills/commit/SKILL.md",
+      "sha256": "1ddd5c7f49931138279314040faa10cee0296f4adc342cc13531697500a35767",
+      "group": "codex",
+      "kind": "copy"
+    },
+    {
+      "path": ".agents/skills/pr/agents/openai.yaml",
+      "source": "skills/pr/agents/openai.yaml",
+      "sha256": "7cc7adbde719e8c0a22c06aa56894b74be145e4e291c589cde3d2cf0c4b4aec1",
+      "group": "codex",
+      "kind": "copy"
+    },
+    {
+      "path": ".agents/skills/pr/SKILL.md",
+      "source": "skills/pr/SKILL.md",
+      "sha256": "50c925885ccd3ba4b74937d6b491373b9148be7137b2e1529a69219ac5c7e566",
+      "group": "codex",
+      "kind": "copy"
+    },
+    {
+      "path": ".claude/skills/commit/agents/openai.yaml",
+      "source": "skills/commit/agents/openai.yaml",
+      "sha256": "31fe8123cdc7bdf3d4805abe3e2ba8473390f62f7349422c23198ae238aaf966",
+      "group": "claude",
+      "kind": "copy"
+    },
+    {
+      "path": ".claude/skills/commit/SKILL.md",
+      "source": "skills/commit/SKILL.md",
+      "sha256": "1ddd5c7f49931138279314040faa10cee0296f4adc342cc13531697500a35767",
+      "group": "claude",
+      "kind": "copy"
+    },
+    {
+      "path": ".claude/skills/pr/agents/openai.yaml",
+      "source": "skills/pr/agents/openai.yaml",
+      "sha256": "7cc7adbde719e8c0a22c06aa56894b74be145e4e291c589cde3d2cf0c4b4aec1",
+      "group": "claude",
+      "kind": "copy"
+    },
+    {
+      "path": ".claude/skills/pr/SKILL.md",
+      "source": "skills/pr/SKILL.md",
+      "sha256": "50c925885ccd3ba4b74937d6b491373b9148be7137b2e1529a69219ac5c7e566",
+      "group": "claude",
+      "kind": "copy"
+    },
+    {
+      "path": "docs/conventions/typescript.md",
+      "source": "docs/conventions/typescript.md",
+      "sha256": "2a0dbd088bf3de006a9642bd0b6f849fa8f4cf838d5b02a7b14865dc28eaa68a",
+      "group": "common",
+      "kind": "copy"
+    }
+  ],
+  "blocks": [
+    {
+      "path": "AGENTS.md",
+      "id": "agent-presets",
+      "sha256": "af5752e6da640374382035b11d7f916fba56da54f2c6e98f7187dd77b7fac589",
+      "group": "codex"
+    },
+    {
+      "path": "CLAUDE.md",
+      "id": "agent-presets",
+      "sha256": "ee814028fc94709a3d263dbc3703f11a21aeafadf0a993aaf0a3a0d2caae0700",
+      "group": "claude"
+    }
+  ]
+}

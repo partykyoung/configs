@@ -1,22 +1,45 @@
 {
   "name": "@kyoungah/agent-presets",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Claude Code와 Codex용 공용 규칙 및 워크플로 프리셋 (Next.js / React / TypeScript)",
+  "keywords": [
+    "agents",
+    "claude-code",
+    "codex",
+    "react",
+    "nextjs",
+    "typescript"
+  ],
+  "license": "ISC",
+  "engines": {
+    "node": ">=18"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/partykyoung/configs"
+    "url": "git+https://github.com/partykyoung/configs.git",
+    "directory": "packages/agent-presets"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "bin": {
     "sync-agent-presets": "scripts/sync-agent-presets.mjs"
   },
   "scripts": {
-    "sync": "node scripts/sync-agent-presets.mjs"
+    "sync": "node scripts/sync-agent-presets.mjs",
+    "sync:check": "node scripts/sync-agent-presets.mjs --check",
+    "sync:doctor": "node scripts/sync-agent-presets.mjs --doctor",
+    "test": "node --test test/*.test.mjs"
   },
   "files": [
-    "rules",
-    "commands",
+    "docs",
     "skills",
     "scripts",
-    "README.md"
-  ]
+    "migrations",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "dependencies": {
+    "skills": "1.4.0"
+  }
 }
